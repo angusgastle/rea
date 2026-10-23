@@ -7,16 +7,19 @@ the standing project context for agent sessions; `INITIAL_BRIEF.md` remains the 
 
 ## Status
 
-| Field | Value |
-| --- | --- |
-| Current phase | **0 — environment setup + disc preservation (not started)** |
-| Last updated | 2026-10-22 |
-| Next investigation | INV-000: environment setup (§9.6), then Phase 0 disc runbook (§4.1) |
-| Evidence ledger | `spore_briefs/evidence-ledger.md` (create at Phase 0 kickoff) |
-| Analysis target | **1.5.1 (patch 5.1) disc lineage** — decided, see D1 |
-| Environment | Nothing installed yet: no Ghidra, no REA setup (§9.6 checklist) |
-| Team | Solo, expecting collaborators (ledger claiming rules in §10) |
-| Compute budget | Unlimited inference (sponsored — see below) |
+| Field               | Value                                                                                                                                                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Current phase       | **3–4 — formats decoded (container/index/.prop/mount/RW4); first reconstructed creature body assembled (INV-016)**                                              |
+| Last updated        | 2026-10-23 (late)                                                                                                                                               |
+| Reference runtime   | Original game runs on this Mac under CrossOver (INV-035): `~/Documents/spore/tools/launch_spore_crossover.sh` reaches the main menu                             |
+| Milestone C         | Interactive native macOS creature viewer built (INV-033): `~/Documents/spore/viewer/run.sh` — real assembled parts, proxy spine skin, no textures/animation yet |
+| Next investigation  | INV-033: skin mesh generator (FromRigblocks output → surface); Phase 5 roadmap; INV-032e posing only if required (0x9c31e0 re-rooting)                          |
+| Evidence ledger     | `spore_briefs/evidence-ledger.md`                                                                                                                               |
+| Analysis target     | **GOG SPORE Collection 3.1.0.29**: SecuROM-free. Revised D1, see §4.3                                                                                           |
+| Preservation master | Retail disc image `SPORE.cdr`, SHA-256 `2c2d5bce…67fc773` (§4.3.1)                                                                                              |
+| Environment         | Ghidra 12.1.4 + Temurin 21 (arm64) + REA registered with Claude Code; see `spore/env/README.md`                                                                 |
+| Team                | Solo, expecting collaborators (ledger claiming rules in §10)                                                                                                    |
+| Compute budget      | Unlimited inference (sponsored — see below)                                                                                                                     |
 
 **Sponsorship:** inference compute for this project is sponsored by
 **Runars — Canadian AI Inference**.
@@ -69,9 +72,9 @@ graphics drivers and floating-point behavior.
 
 Confidence tags used throughout:
 
-| Tag | Meaning |
-| --- | --- |
-| `[D]` | Documented — from interviews, papers, or the ModAPI SDK |
+| Tag    | Meaning                                                 |
+| ------ | ------------------------------------------------------- |
+| `[D]`  | Documented — from interviews, papers, or the ModAPI SDK |
 | `[SI]` | Strong inference — supported but not directly confirmed |
 | `[NE]` | Not established — open question, requires investigation |
 
@@ -99,8 +102,8 @@ that in mind. (Will Wright, 2006 interview `[D]`.)
 
 ### 3.2 Procedural animation — the strongest technical evidence
 
-From Chris Hecker's SIGGRAPH 2008 paper *Real-Time Motion Retargeting to Highly Varied
-User-Created Morphologies* and GDC presentations `[D]`:
+From Chris Hecker's SIGGRAPH 2008 paper _Real-Time Motion Retargeting to Highly Varied
+User-Created Morphologies_ and GDC presentations `[D]`:
 
 ```mermaid
 flowchart LR
@@ -180,16 +183,16 @@ and cross-team integration dependencies `[D]`.
 
 ### 3.7 Open technical unknowns
 
-| Question | Status |
-| --- | --- |
-| Exact source language and compiler settings | `[NE]` not established from public sources |
-| Complete engine module map | `[NE]` not publicly documented |
-| Original memory allocator and object lifetime rules | Partially recoverable via SDK + binary analysis |
-| Complete animation implementation | `[D]` core technique published; `[NE]` full implementation |
-| Complete save-game and serialization formats | `[NE]` requires investigation |
-| Full planet-generation algorithm | `[D]` research exists; `[NE]` shipped implementation needs validation |
-| Exact resource-loading and caching behavior | Partially documented; `[NE]` binary and runtime analysis required |
-| All gameplay rules and AI behaviors | `[NE]` not covered by public papers |
+| Question                                            | Status                                                                                                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Exact source language and compiler settings         | Toolchain observed (INV-000): retail 2008 build MSVC 7.1 (linker 7.10, msvcr71); GOG 2024 build MSVC 9.0 (linker 9.0, msvcr90). Flags `[NE]` |
+| Complete engine module map                          | `[NE]` not publicly documented                                                                                                               |
+| Original memory allocator and object lifetime rules | Partially recoverable via SDK + binary analysis                                                                                              |
+| Complete animation implementation                   | `[D]` core technique published; `[NE]` full implementation                                                                                   |
+| Complete save-game and serialization formats        | `[NE]` requires investigation                                                                                                                |
+| Full planet-generation algorithm                    | `[D]` research exists; `[NE]` shipped implementation needs validation                                                                        |
+| Exact resource-loading and caching behavior         | Partially documented; `[NE]` binary and runtime analysis required                                                                            |
+| All gameplay rules and AI behaviors                 | `[NE]` not covered by public papers                                                                                                          |
 
 These are not equally hard unknowns: several major algorithms are published, and the
 community has mapped many functions and data structures already.
@@ -203,32 +206,62 @@ not delivery dates. Phases 0–4 are gates that should re-rank everything after 
 
 ### 4.1 Phases
 
-| Phase | Scope | Estimate | Deliverable (gate) |
-| --- | --- | --- | --- |
-| **0 — Preserve and inventory** | Read-only master image of the disc, hashes, working copy, full file manifest; record edition, executable architecture, language, patches, installer dependencies | 1–3 days | Reproducible baseline and file manifest |
-| **1 — Prove REA works on the game** | Install REA + Ghidra; identify main PE executable and DLLs; validate function discovery, decompilation, xrefs, large-binary handling | 3–7 days | Tested toolchain + executable structure report |
-| **2 — Map the engine** | Trace startup, resource loading, rendering, input, simulation, serialization, stage transitions via strings, imports, call refs, runtime observation | 2–6 weeks | Dependency graph + evidence-backed technical spec |
-| **3 — Decode assets and creature data** | Archive formats; extract representative models/textures; document creature-part representation and attachment rules; read-only inspection tools first | 2–8 weeks (initial) | Resource browser + working reader for one important format |
-| **4 — First vertical slice** | Load a real creature configuration → reconstruct parts and attachments → generate geometry → render a recognizable creature | 4–12 weeks | Working, testable creature reconstruction |
-| **5 — Expand toward the complete game** | Editing, animation, AI, world simulation, progression, stage gameplay, UI, audio, save compatibility, stage transitions | months–years | Increasingly complete implementation, measured against original behavior |
+| Phase                                   | Scope                                                                                                                                                            | Estimate            | Deliverable (gate)                                                       |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------ |
+| **0 — Preserve and inventory**          | Read-only master image of the disc, hashes, working copy, full file manifest; record edition, executable architecture, language, patches, installer dependencies | 1–3 days            | Reproducible baseline and file manifest                                  |
+| **1 — Prove REA works on the game**     | Install REA + Ghidra; identify main PE executable and DLLs; validate function discovery, decompilation, xrefs, large-binary handling                             | 3–7 days            | Tested toolchain + executable structure report                           |
+| **2 — Map the engine**                  | Trace startup, resource loading, rendering, input, simulation, serialization, stage transitions via strings, imports, call refs, runtime observation             | 2–6 weeks           | Dependency graph + evidence-backed technical spec                        |
+| **3 — Decode assets and creature data** | Archive formats; extract representative models/textures; document creature-part representation and attachment rules; read-only inspection tools first            | 2–8 weeks (initial) | Resource browser + working reader for one important format               |
+| **4 — First vertical slice**            | Load a real creature configuration → reconstruct parts and attachments → generate geometry → render a recognizable creature                                      | 4–12 weeks          | Working, testable creature reconstruction                                |
+| **5 — Expand toward the complete game** | Editing, animation, AI, world simulation, progression, stage gameplay, UI, audio, save compatibility, stage transitions                                          | months–years        | Increasingly complete implementation, measured against original behavior |
 
-**Phase 4 is the recommended vertical slice:** the creature pipeline is central to Spore's
+**Phase 4 is the recommended vertical slice** (INV-015 found its concrete chain: `CRT` XML creature → `blockref` keys in group `40626000` → block prop + `blockdata` → RW4 models in group `40606000`): the creature pipeline is central to Spore's
 identity, combines binary analysis with procedural algorithms, and gives a clear path from
 one real input file to a visible, testable result.
 
 ### 4.2 Milestones A–D (near-term edge of Phases 0–2)
 
-| Milestone | Weeks | Content | Maps to |
-| --- | --- | --- | --- |
-| **A — Mac development environment** | 1–2 | Run REA + Ghidra; establish the original Windows game as reference; compile a minimal native macOS application | Phase 0–1 |
-| **B — 4K rendering and UI prototype** | 2–4 | Test scene at 3840×2160: correct Retina scaling, readable text, responsive hitboxes, stable frame pacing | Parallel track (§7) |
-| **C — First reconstructed creature** | 4–12 | Load a real creature configuration, generate its geometry, render it on the new pipeline | Phase 3–4 (begins) |
-| **D — Full gameplay reconstruction** | long-term | Expand shared engine + stage gameplay; macOS/4K remain continuous regression targets | Phase 5 |
+| Milestone                             | Weeks     | Content                                                                                                        | Maps to                                                                                                                                                                                                                                                                   |
+| ------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A — Mac development environment**   | 1–2       | Run REA + Ghidra; establish the original Windows game as reference; compile a minimal native macOS application | Phase 0–1                                                                                                                                                                                                                                                                 |
+| **B — 4K rendering and UI prototype** | 2–4       | Test scene at 3840×2160: correct Retina scaling, readable text, responsive hitboxes, stable frame pacing       | Parallel track (§7)                                                                                                                                                                                                                                                       |
+| **C — First reconstructed creature**  | 4–12      | Load a real creature configuration, generate its geometry, render it on the new pipeline                       | Phase 3–4 (**first bodies assembled 2026-10-23**: CRT XML spines and premade `creatureData` skeletons (34 blocks, limbs/head) → RW4 meshes, wireframe; pose and skin colours match the game's thumbnail; shaded skeleton render exists; no skin surface/textures/rig yet) |
+| **D — Full gameplay reconstruction**  | long-term | Expand shared engine + stage gameplay; macOS/4K remain continuous regression targets                           | Phase 5                                                                                                                                                                                                                                                                   |
 
-### 4.3 Version decision (was open decision D1 — resolved)
+### 4.3 Version decision (D1 — revised 2026-10-23)
 
-**Decision: analyze the 1.5.1 (patch 5.1) disc lineage; treat the untouched disc as the
-preservation master.** Rationale:
+**Current decision: analyze the GOG SPORE Collection 3.1.0.29 binaries; the retail disc
+image is the preservation master and a separate asset/behavior reference.**
+
+Why it was revised (INV-000, observed):
+
+- The retail disc's `SporeApp.exe` (FileVersion 1.1.0.338) is wrapped by **SecuROM 7.37**
+  (`.securom`/`Stext`/`Sitext`/… sections; entry point inside `Sitext`; wrapper PDB path
+  `…\SecuROM-DRM_7_37\…\wrapper.pdb`), and `paul.dll`/`WINUI.dll` are SecuROM PA
+  activation components. Static analysis of the disc binary would mostly see encrypted
+  code, and working around it raises a circumvention question (D5). It is also unknown
+  whether patch 5.1 removes the wrapper.
+- The purchased GOG build has no SecuROM. It has a plain `.text` section and is signed,
+  so it can be analyzed without touching DRM.
+
+Consequences:
+
+- **Different lineage from the 1.5.1 retail baseline.** The GOG executables are a 2024
+  rebuild (MSVC 9.0 / VS2008; PE timestamps 2024-09-30/10-01; build path
+  `c:\BuildAgent\max-spore001-spore\CMBuild\SporeEP1_RL\…`). Before reusing any ModAPI
+  symbols, check whether ModAPI has data for this build. `[NE]`
+- **Two executables ship:** `SporeBin/SporeApp.exe` (FileVersion 1.3.0.29) and
+  `SporebinEP1/SporeApp.exe` (3.1.0.29, Galactic Adventures; this is GOG's primary play
+  task). Their `.text` sections are the same size but differ byte-for-byte. Choosing the
+  primary target is open decision D8.
+- **ASLR:** both have `DYNAMIC_BASE` and a `.reloc` section (preferred base `0x400000`).
+  Ledger entries should cite RVAs, or VAs at the preferred base, never runtime addresses.
+- **Assets differ by lineage:** all five shared `.package` files differ in hash and size
+  between the disc and GOG, and GOG adds `PatchData`, `Spore_Pack_03`, EP1 and
+  BoosterPack packages. Fixtures must record which lineage they came from.
+- The retail 1.5.1 patch path (below) is kept only as an optional later cross-check.
+
+Original 2026-10-22 rationale for the 1.5.1 disc lineage (superseded):
 
 - The ModAPI community's symbols, addresses, and Ghidra import data target the 1.5.1-era
   executables — analyzing 1.5.1 maximizes symbol reuse (§2, principle 3).
@@ -246,7 +279,23 @@ preservation and for diffing patch deltas later if needed.
 
 #### 4.3.1 Acquisition pipeline — image the disc, never download a game copy
 
-The analysis target is built **from the owned disc**, in this chain:
+**Done (2026-10-23, INV-000):**
+
+- **Disc master:** imaged by the operator, offline, on a Mac with a built-in optical drive,
+  using Disk Utility (DVD/CD master format). Result: `~/Documents/spore/spore_master/SPORE.cdr`,
+  4,142,563,328 bytes, matching the ISO volume size (2,022,736 × 2048), so the image is
+  not truncated. SHA-256 `2c2d5bce716175c0eb7ea451de1246b41d7f23c5a80c8cd7fa5eaa88f67fc773`,
+  SHA-1 `d08d1985d3161661d4f0ded30a0d11e705f2fcc2`, MD5 `0ad66fff7854c03f44b02c08db781d31`.
+  Not yet done: a second read to compare hashes, and write-protecting the file.
+- **GOG analysis source:** operator's own GOG purchase, made on another laptop and
+  transferred here by AirDrop. Offline installer set
+  `setup_sporetm_collection_3.1.0.29_(77221)` (.exe + -1.bin + -2.bin; hashes in the
+  ledger). The installer is GOG-signed. `innoextract 1.9 --test` passed. Extracted to
+  `~/Documents/spore/spore_work/gog-3.1.0.29/` (1,636 files, 5.9 GB).
+- **Manifests:** `manifest-disc.json` (1,484 files) and `manifest-gog-3.1.0.29.json`
+  (1,636 files), SHA-256 for every file.
+
+The original disc-only chain is below (step 3 and later are now optional):
 
 ```
 Physical disc (master, read-only, archived in original package)
@@ -272,14 +321,14 @@ Rules that fall out of this:
   binaries differ from the authentic patched executables the ModAPI symbol data targets.
   Analyzing a tampered binary silently poisons every address, symbol, and hash in the
   knowledge base — the one failure mode this project cannot recover from cheaply. The
-  *patch installer* from a reputable mirror is the only acceptable non-disc artifact, and
+  _patch installer_ from a reputable mirror is the only acceptable non-disc artifact, and
   only after hash verification. **Known artifacts ruled out (2026-10-22):** a Pirate Bay
   torrent of the GOG Collection repack (2.0.0.5, DRM-free, GA-integrated;
   `~/Downloads/SPORE.Collection-GOG`) and a scene-style RAR tagged v3.1.0.29
   (`~/Downloads/SPORE.Collection.v3.1.0.29.rar`, newer than GOG's advertised 3.1.0.22 —
   untrusted bytes, zero information value over the store page) — both excluded as
   analysis sources on provenance (§12) and binary-lineage grounds. Do not use them for
-  analysis, reference behavior, or fixtures. A *purchased* GOG copy, if still listed, would be a legitimate third variant
+  analysis, reference behavior, or fixtures. A _purchased_ GOG copy, if still listed, would be a legitimate third variant
   with its own ModAPI symbol baseline — but only the retail 1.5.1 lineage is in scope.
 - **The patch modifies the working install, never the disc or the image.** The 1.0 image
   stays bit-identical forever; re-deriving any later state is always possible.
@@ -291,13 +340,15 @@ Rules that fall out of this:
   [gog.com/en/game/spore_collection](https://www.gog.com/en/game/spore_collection) (~C$20
   as of 2026-10-22, on sale; current build **3.1.0.22 GOG v2.hotfix**, Oct 2025, part of
   GOG's Preservation Program; includes Spore + Galactic Adventures + Creepy & Cute).
-  Verified available. This is a *different binary lineage* from retail 1.5.1 — DRM-free
+  Verified available. This is a _different binary lineage_ from retail 1.5.1 — DRM-free
   repackage, GA-integrated, GOG launcher/config tool. Community ModAPI data has baselines
   for specific GOG builds, but 3.1.0.22 is newer than the ones the repack scene targeted
   (2.0.0.5), so symbol coverage must be checked before any reuse. Value: an authentic
   publisher-delivered reference for behavior and assets; a candidate for comparing how the
-  GA-integrated build structures what the disc ships separately. Not in scope as an
-  analysis target — only the retail 1.5.1 lineage is (this decision).
+  GA-integrated build structures what the disc ships separately. **Superseded 2026-10-23:
+  this is now the analysis target (see §4.3).** Version note: the purchased installer is
+  3.1.0.29 (binaries built 2024-09/10). That conflicts with the 3.1.0.22 (Oct 2025) store
+  build recorded above; which is current on GOG is unresolved `[NE]`.
 - Every corpus file gets its SHA-256 recorded at step 4; ledger entries cite the hash, not
   the filename, so a future re-extraction can be validated byte-for-byte.
 
@@ -321,15 +372,15 @@ behavior.**
 
 The reverse-engineering environment and the reconstruction environment stay separate.
 
-| Component | Choice | Reason |
-| --- | --- | --- |
-| Binary analysis | REA + Ghidra | Primary investigation workflow for the native Windows binaries (§9) |
-| Agent | Claude Code (or Codex) | Structured investigations, code, tests |
-| Analysis scripts | Python | Rapid file-format inspection, extraction, binary experiments |
-| Reimplementation | C++20 (portable core) | Control over memory layouts, binary formats, performance, procedural geometry |
-| Rendering | Portable abstraction; **Metal-backed macOS renderer**, optional Windows renderer | Establish graphics requirements without premature engine commitment |
-| Testing | Automated regression fixtures | Compare reconstructed outputs against recorded original behavior |
-| Knowledge base | Markdown + JSON (this directory) | Version-controlled findings, function maps, format schemas, confidence levels |
+| Component        | Choice                                                                           | Reason                                                                        |
+| ---------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Binary analysis  | REA + Ghidra                                                                     | Primary investigation workflow for the native Windows binaries (§9)           |
+| Agent            | Claude Code (or Codex)                                                           | Structured investigations, code, tests                                        |
+| Analysis scripts | Python                                                                           | Rapid file-format inspection, extraction, binary experiments                  |
+| Reimplementation | C++20 (portable core)                                                            | Control over memory layouts, binary formats, performance, procedural geometry |
+| Rendering        | Portable abstraction; **Metal-backed macOS renderer**, optional Windows renderer | Establish graphics requirements without premature engine commitment           |
+| Testing          | Automated regression fixtures                                                    | Compare reconstructed outputs against recorded original behavior              |
+| Knowledge base   | Markdown + JSON (this directory)                                                 | Version-controlled findings, function maps, format schemas, confidence levels |
 
 **Do not commit to Godot or Unreal up front.** Either could work, but a faithful port needs
 a custom compatibility layer for original data formats, simulation timing, and procedural
@@ -374,10 +425,10 @@ the interesting problems are the original's legacy assumptions `[D]`:
 - Therefore a faithful recreation must **distinguish original art from original display
   limitations**.
 
-| Concern | Approach |
-| --- | --- |
-| Resolution-independent UI | Logical UI coordinates; interface elements scale independently of render resolution; text, buttons, tooltips, and hitboxes share one layout transform |
-| Original asset fidelity | Preserve original meshes, textures, shaders, material behavior; 4K does **not** mean AI-upscaling low-resolution source textures |
+| Concern                   | Approach                                                                                                                                                          |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Resolution-independent UI | Logical UI coordinates; interface elements scale independently of render resolution; text, buttons, tooltips, and hitboxes share one layout transform             |
+| Original asset fidelity   | Preserve original meshes, textures, shaders, material behavior; 4K does **not** mean AI-upscaling low-resolution source textures                                  |
 | Modern rendering pipeline | Metal-backed renderer; 4K render targets; texture memory management; validate shader behavior against original; resolution-aware post-processing and antialiasing |
 
 Two presentation modes:
@@ -409,13 +460,13 @@ Two presentation modes:
 A visually similar game is not behaviorally faithful. Establish this scorecard early and
 keep deterministic tests in it:
 
-| Dimension | Target |
-| --- | --- |
-| **Asset fidelity** | Original creature parts, textures, models, sounds load correctly |
-| **Procedural fidelity** | Same creature configuration → matching geometry and attachments |
-| **Simulation fidelity** | Movement, AI, combat, progression follow the original rules |
+| Dimension                | Target                                                               |
+| ------------------------ | -------------------------------------------------------------------- |
+| **Asset fidelity**       | Original creature parts, textures, models, sounds load correctly     |
+| **Procedural fidelity**  | Same creature configuration → matching geometry and attachments      |
+| **Simulation fidelity**  | Movement, AI, combat, progression follow the original rules          |
 | **Interaction fidelity** | Editing tools, controls, menus, stage transitions behave as expected |
-| **Persistence fidelity** | Save/load preserves creature state and relevant world progress |
+| **Persistence fidelity** | Save/load preserves creature state and relevant world progress       |
 
 Deterministic anchors: same input creature configuration → same attachment graph and
 comparable mesh; same starting state and inputs → expected simulation step result. Exact
@@ -492,7 +543,7 @@ named `entry`. MCP equivalents: `open_binary`, `list_procedures`, `analyze_funct
 
 Per-investigation loop (§2 principle 2):
 
-1. Form a specific hypothesis — *"this function deserializes a creature-part record."*
+1. Form a specific hypothesis — _"this function deserializes a creature-part record."_
 2. Gather evidence: function dossier, callers/callees, xrefs, strings, assembly.
 3. Document uncertainty: observed facts vs. inferred structures vs. open questions.
 4. Design a discriminating test: representative input, observed original behavior, or two
@@ -550,6 +601,7 @@ Confidence tags match REA's own observed/derived/inferred discipline.
 
 ```markdown
 ## INV-00N: <hypothesis title>
+
 - Status: open | confirmed | refuted | partially confirmed
 - Confidence: observed | strongly inferred | unverified
 - Claimed by: <name/session> — date range
@@ -580,20 +632,22 @@ or gate outcome changes.
 
 ## 11. Risk register
 
-| # | Risk | Where it bites | Impact | Mitigation |
-| --- | --- | --- | --- | --- |
-| 1 | Creature-data format proves unusually difficult | Phase 3 gate | Re-planning | Phases are gates — decide before Phase 4 investment; fall back to a different vertical slice if needed; 5.1 COLLADA exporter output is a ground-truth cross-check (§3.4) |
-| 2 | Address/symbol drift between game versions (disc 1.0 vs community-targeted 1.5.1) | Phase 1–2 | Wrong mappings silently poison the knowledge base | **Resolved by version decision (§4.3): analyze 1.5.1.** Still pin executable hash per ledger entry; never mix lineages in one evidence chain |
-| 3 | ModAPI coverage gaps for the exact disc variant | Phase 1 | More de-novo work than planned | Coverage check is an explicit Phase 1 task; analyzing 1.5.1 minimizes (not eliminates) this |
-| 4 | Ephemeral Ghidra DB re-analysis cost on large PEs, every session | Phase 1 onward | Wasted analysis time | Measure in Phase 1; tune startup/resource controls; keep heavy manual RE in a separate persistent Ghidra project if needed |
-| 5 | Disc DRM (Spore shipped with SecuROM-era protection `[SI]` — unverified for this disc) | Phase 0–1 | Install/reference environment blocked | Test in isolated environment; see Open decision D2; never let DRM handling touch REA's read-only analysis. The 1.5.1 patch installer may also check for an existing install — test before relying on it |
-| 6 | Scope explosion in Phase 5 (five stages × full gameplay) | Phase 5 | Project stalls | Stage-by-stage scorecard; fidelity anchors per stage; gate each stage on the previous |
-| 7 | Original macOS release is a 32-bit dead end `[D]` | Reference environment | Wrong reference target | Windows release is the reference (§7); runtime via VM/compatibility layer |
-| 8 | Agent hallucination — plausible but unsupported structures entering the knowledge base | All phases | Corrupt evidence, wasted rework | Evidence ledger discipline; discriminating tests; never assume names/formats without evidence (§2) |
-| 9 | Floating-point/driver nondeterminism blocks "exact" matching | Phase 4+ | Chasing impossible goal | Structural/behavioral equivalence targets (§8) |
-| 10 | Legal exposure (EULA anti-RE terms, DRM, distribution) | All phases | Project-ending if material leaks | §12; keep copyrighted material private; legal review before any distribution (Open decision D5) |
-| 11 | 1.5.1 patch source integrity — community mirrors (ModDB etc.) are not EA-controlled | Phase 0 | Untrusted binary entering the reference environment | Verify the installer's published hash against community records before running; download once, hash, and archive internally; prefer archive.org-backed mirrors where available. Full game copies are never downloaded from mirrors — disc imaging only (§4.3.1) |
-| 12 | Sponsorship/publicity invites scope pressure or rights questions (Runars branding on a project touching copyrighted assets) | All phases | Legal ambiguity over who may see/store what | §12 boundaries apply to sponsors and collaborators equally; branding lives on the brief, never on anything containing game assets; confirm Runars' visibility expectations early |
+| #   | Risk                                                                                                                        | Where it bites                  | Impact                                                                              | Mitigation                                                                                                                                                                                                                                                      |
+| --- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Creature-data format proves unusually difficult                                                                             | Phase 3 gate                    | Re-planning                                                                         | Phases are gates — decide before Phase 4 investment; fall back to a different vertical slice if needed; 5.1 COLLADA exporter output is a ground-truth cross-check (§3.4)                                                                                        |
+| 2   | Address/symbol drift between game versions (disc 1.0 vs community-targeted 1.5.1)                                           | Phase 1–2                       | Wrong mappings silently poison the knowledge base                                   | **Resolved by version decision (§4.3): analyze 1.5.1.** Still pin executable hash per ledger entry; never mix lineages in one evidence chain                                                                                                                    |
+| 3   | ModAPI coverage gaps for the exact disc variant                                                                             | Phase 1                         | More de-novo work than planned                                                      | Coverage check is an explicit Phase 1 task; analyzing 1.5.1 minimizes (not eliminates) this                                                                                                                                                                     |
+| 4   | Ephemeral Ghidra DB re-analysis cost on large PEs, every session                                                            | Phase 1 onward                  | Wasted analysis time                                                                | Measure in Phase 1; tune startup/resource controls; keep heavy manual RE in a separate persistent Ghidra project if needed                                                                                                                                      |
+| 5   | Disc DRM: **observed** (INV-000), SecuROM 7.37 wrapper on the disc `SporeApp.exe`, plus PA activation DLLs                  | Phase 0–1                       | Disc binary not statically analyzable; install/reference environment may be blocked | **Mitigated for analysis by D1 revision:** analyze the SecuROM-free GOG build instead. Never let DRM handling touch REA's read-only analysis                                                                                                                    |
+| 13  | Disc install may need SecuROM online activation; activation server availability unknown `[NE]`                              | Disc reference environment only | Retail 2008 behavior can't be captured                                              | GOG build is the runtime reference by default; test disc install only if 2008-behavior capture is ever needed                                                                                                                                                   |
+| 14  | GOG 2024 rebuild may not match ModAPI symbol baselines                                                                      | Phase 1                         | More de-novo naming                                                                 | **Partly mitigated (INV-006):** 72.0% of ModAPI march2017 addresses are function entries in GOG EP1 (vs 5.4% chance); disk-baseline 8.7%. Two matches verified by behaviour; the rest unverified. Use march2017 data as the seed, verify each use               |
+| 6   | Scope explosion in Phase 5 (five stages × full gameplay)                                                                    | Phase 5                         | Project stalls                                                                      | Stage-by-stage scorecard; fidelity anchors per stage; gate each stage on the previous                                                                                                                                                                           |
+| 7   | Original macOS release is a 32-bit dead end `[D]`                                                                           | Reference environment           | Wrong reference target                                                              | Windows release is the reference (§7); runtime via VM/compatibility layer                                                                                                                                                                                       |
+| 8   | Agent hallucination — plausible but unsupported structures entering the knowledge base                                      | All phases                      | Corrupt evidence, wasted rework                                                     | Evidence ledger discipline; discriminating tests; never assume names/formats without evidence (§2)                                                                                                                                                              |
+| 9   | Floating-point/driver nondeterminism blocks "exact" matching                                                                | Phase 4+                        | Chasing impossible goal                                                             | Structural/behavioral equivalence targets (§8)                                                                                                                                                                                                                  |
+| 10  | Legal exposure (EULA anti-RE terms, DRM, distribution)                                                                      | All phases                      | Project-ending if material leaks                                                    | §12; keep copyrighted material private; legal review before any distribution (Open decision D5)                                                                                                                                                                 |
+| 11  | 1.5.1 patch source integrity — community mirrors (ModDB etc.) are not EA-controlled                                         | Phase 0                         | Untrusted binary entering the reference environment                                 | Verify the installer's published hash against community records before running; download once, hash, and archive internally; prefer archive.org-backed mirrors where available. Full game copies are never downloaded from mirrors — disc imaging only (§4.3.1) |
+| 12  | Sponsorship/publicity invites scope pressure or rights questions (Runars branding on a project touching copyrighted assets) | All phases                      | Legal ambiguity over who may see/store what                                         | §12 boundaries apply to sponsors and collaborators equally; branding lives on the brief, never on anything containing game assets; confirm Runars' visibility expectations early                                                                                |
 
 ---
 
@@ -620,22 +674,23 @@ conversation. Jurisdiction and EULA review is an open decision (D5).
 
 ## 13. Open decisions
 
-| # | Decision | Context | Needed by |
-| --- | --- | --- | --- |
-| ~~D1~~ | **RESOLVED — see §4.3:** analyze the 1.5.1 (patch 5.1) disc lineage; disc stays as preservation master | ModAPI symbol reuse + digital builds confirm 1.5.1 as the community baseline | — |
-| D2 | **Runtime reference environment:** Windows VM vs. CrossOver/Wine on Apple Silicon | Unverified performance/compatibility; DRM may complicate either (Risk 5). Budget is not a constraint — prefer whichever preserves exact behavior for reference capture | Phase 0–1 |
-| D3 | **Symbol-seeding mechanics:** persistent external Ghidra project vs. REA in-session atomic edits driven by knowledge-base name maps | Consequence of ephemeral REA databases (§9.3) | Phase 1 |
-| D4 | **Rendering seam depth:** thin portable abstraction now vs. direct Metal first with abstraction later | Affects Milestone B timing | Phase 4 / Milestone B |
-| D5 | **Legal review scope:** EULA terms and jurisdiction (personal use, interoperability, preservation exceptions) | Required before any distribution decision; also covers sponsor visibility (Risk 12) | Before any sharing |
-| D6 | **Stage fidelity depth:** are all five stages equal-priority, or space stage last? | Phase 5 sequencing | Phase 4 |
-| D7 | **Disc drive logistics:** the disc is physical and in hand — confirm a working optical drive exists (external USB drive on modern Macs), and whether an external Windows-capable machine is available for install testing | Phase 0 needs a readable drive; the reference environment (D2) may need a real Windows machine if VM/compatibility routes struggle with DRM | Phase 0 |
+| #      | Decision                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Context                                                                                                                                                                | Needed by                                                   |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| ~~D1~~ | **RESOLVED — see §4.3:** analyze the 1.5.1 (patch 5.1) disc lineage; disc stays as preservation master                                                                                                                                                                                                                                                                                                                                                                                                           | ModAPI symbol reuse + digital builds confirm 1.5.1 as the community baseline                                                                                           | —                                                           |
+| D2     | **Runtime reference environment:** Windows VM vs. CrossOver/Wine on Apple Silicon                                                                                                                                                                                                                                                                                                                                                                                                                                | Unverified performance/compatibility; DRM may complicate either (Risk 5). Budget is not a constraint — prefer whichever preserves exact behavior for reference capture | Phase 0–1                                                   |
+| D3     | **Symbol-seeding mechanics:** persistent external Ghidra project vs. REA in-session atomic edits driven by knowledge-base name maps                                                                                                                                                                                                                                                                                                                                                                              | Consequence of ephemeral REA databases (§9.3)                                                                                                                          | Phase 1                                                     |
+| D4     | **Rendering seam depth:** thin portable abstraction now vs. direct Metal first with abstraction later                                                                                                                                                                                                                                                                                                                                                                                                            | Affects Milestone B timing                                                                                                                                             | Phase 4 / Milestone B                                       |
+| D5     | **Legal review scope:** EULA terms and jurisdiction (personal use, interoperability, preservation exceptions; Canadian TPM rules, Copyright Act s.41, if the SecuROM disc binary is ever analyzed at runtime)                                                                                                                                                                                                                                                                                                    | Required before any distribution decision; also covers sponsor visibility (Risk 12)                                                                                    | Before any sharing; before any disc-binary runtime analysis |
+| D6     | **Stage fidelity depth:** are all five stages equal-priority, or space stage last?                                                                                                                                                                                                                                                                                                                                                                                                                               | Phase 5 sequencing                                                                                                                                                     | Phase 4                                                     |
+| ~~D7~~ | **RESOLVED 2026-10-23:** disc imaged offline on a Mac with a built-in optical drive (Disk Utility)                                                                                                                                                                                                                                                                                                                                                                                                               | —                                                                                                                                                                      | —                                                           |
+| ~~D8~~ | **RESOLVED 2026-10-23: `SporebinEP1/SporeApp.exe` (3.1.0.29) is the primary analysis target.** Evidence (INV-012 note in ledger): ModAPI march2017 function addresses are entries in 72.0% of cases for EP1 vs 19.5% for the base-game 1.3.0.29 executable; only 17,642 function entries are shared between the two builds; the key loader/manager functions checked in INV-006/011 sit at their ModAPI addresses in EP1 but not in the base build. The base executable stays in the corpus as a secondary build | —                                                                                                                                                                      | —                                                           |
 
 ---
 
 ## 14. Sources
 
 URLs are included only where high-confidence; unlinked citations are findable by title.
-Confidence tags describe the *claim*, not the source quality.
+Confidence tags describe the _claim_, not the source quality.
 
 **Tooling and community recovery**
 
@@ -646,20 +701,20 @@ Confidence tags describe the *claim*, not the source quality.
 
 **Published technical sources (primary)**
 
-- Chris Hecker — *Real-Time Motion Retargeting to Highly Varied User-Created Morphologies*,
+- Chris Hecker — _Real-Time Motion Retargeting to Highly Varied User-Created Morphologies_,
   SIGGRAPH 2008; GDC 2007 lecture materials. Hosted on
   [chrishecker.com](https://www.chrishecker.com/).
-- Maxis — SIGGRAPH 2007 technical sketches: *Player-Driven Procedural Texturing*,
+- Maxis — SIGGRAPH 2007 technical sketches: _Player-Driven Procedural Texturing_,
   Rigblocks / deformable construction, spherical worlds, fast object distribution
   (CMU-hosted mirror; re-locate by title).
-- *Engineering Spore*, IEEE Spectrum, 2008 — architectural problems of user-generated
+- _Engineering Spore_, IEEE Spectrum, 2008 — architectural problems of user-generated
   content, including animation for never-before-seen bodies.
 
 **Interviews and history**
 
 - Will Wright interview, GameSpot, 2006 — creation pipeline, team composition, stage
   integration status.
-- Don Hopkins — *The Future of Content: Will Wright's Spore Demo at GDC 3/11/2005*
+- Don Hopkins — _The Future of Content: Will Wright's Spore Demo at GDC 3/11/2005_
   (Medium).
 
 **Platform references**
@@ -779,3 +834,24 @@ Decisions and additions from the post-curation planning session:
    optional cross-validation variant — not an analysis target. The torrented 2.0.0.5
    repack and an additional scene RAR tagged v3.1.0.29 remain excluded on provenance and
    lineage grounds.
+
+## Appendix D — 2026-10-23 Phase 0 session updates
+
+1. **Disc master imaged** (D7 closed): offline, Disk Utility `.cdr`, hashes recorded
+   (§4.3.1). The image is a Win/Mac hybrid; the Mac side is a TransGaming Cider wrapper,
+   not a native port.
+2. **SecuROM 7.37 observed** on the disc `SporeApp.exe` (Risk 5 confirmed; new Risk 13 on
+   activation).
+3. **D1 revised:** the analysis target is now the operator-purchased GOG Collection
+   3.1.0.29 (SecuROM-free 2024 rebuild, MSVC 9.0, ASLR-enabled). The disc stays the
+   preservation master. New Risk 14 (ModAPI coverage of the 2024 build) and decision D8
+   (which of the two executables is primary).
+4. **Provenance note:** the GOG installer set carries the same version tag (3.1.0.29) as
+   the scene RAR excluded on 2026-10-22. The operator states this set is from their own
+   GOG purchase. It is GOG-signed and passes innoextract's checksum test. That RAR's hash
+   was never recorded, so the two can't be compared byte-for-byte. Optional extra check:
+   re-download from the GOG library and compare against the hashes in INV-000.
+5. **Assets differ between lineages:** no shared `.package` file matches between disc and
+   GOG.
+6. Tools added: `innoextract` 1.9 (Homebrew; this upgraded `boost` to 1.92 as a
+   dependency).
