@@ -1229,3 +1229,391 @@ Full per-file hashes: `manifest-disc.json`, `manifest-gog-3.1.0.29.json`.
   - Not done — gameplay stages, saves, audio check, performance, resolution/scaling fix, a clean second-launch test of the script, and any comparison against the native reconstruction.
   - Rights/security — nothing was bypassed; the game files are the user's own and stay local; CrossOver is commercial trial software (`brew uninstall --cask crossover` removes it).
 - Follow-ups: use the running game as the behavioural reference (screenshots/traces) for INV-032 animation and the skin generator; fix window scaling; Phase 5 roadmap.
+
+---
+
+## INV-036: the skin surface generator — a compact-support metaball field; kernel and spine rules decoded, limb rules and polygoniser still open
+
+- Status: partial — the field function, blob/edge primitives, spine node rules and the data flow are decoded from the executable; limb node rules and the surface extraction are not
+- Confidence: observed (decompiled code) for the kernel, grid and spine; limb/capsule details partly read, partly inferred where marked
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-23
+- Target: GOG EP1 `SporeApp.exe` 3.1.0.29: surface class `0x4f85d0` (alloc tag `Skinner/Surface`), field kernels `0x4f8da0` (+ SIMD variants `0x4f90c0`, `0x4f91a0`), per-group sum `0x4f8e40`, spatial lookup `0x4f8f90`, `addBlob` `0x4f8a60`, grid builder `0x4f96c0`, `addTaperedCapsule` `0x4fcd90`, node/edge flush `0x4fd410`, skin-shape builder `0x413dd0`, limb builder `0x4128f0`, radius/position helpers `0x4a6110`/`0x4a6180`
+- Evidence: decompilations (REA/Ghidra, local); ModAPI `cEditorSkinMesh.h` (field_38 "SkinnerSurface?", `UnkStruct1` = skin nodes); string tags `Skinner/Surface`, `Skinner/Swarm`, `Skinner/Clear`, `Skinner/MeshAORender`, `Skinner/PaintSystem`.
+- Findings:
+  - Observed — **the skin is an implicit surface.** `field(p) = Σ_blobs w · (1 − |p−c|²/R²)⁴  (for |p−c| < R) − threshold` (`0x4f8e40` evaluates 4 blobs per group in SoA layout: centres x[4], y[4], z[4], R²[4], 1/R²[4], w[4]; `0x4f8da0` subtracts the threshold stored at surface `+0xc`). The three function pointers are SIMD-level variants of the same evaluation, chosen once from a CPU capability probe.
+  - Observed — **acceleration structure** (`0x4f96c0`): blobs are bucketed in an 8×8×8 grid over the blobs' bounding box (index `z + 8y + 64x`, 512 buckets, 256-max grid dimension check); `addBlob(centre, weight, radius, tag)` (`0x4f8a60`) grows the bounding box by `±radius`.
+  - Observed — **spine** (`0x413dd0`): Vertebra (type 5) blocks, in order, each give a node at `P − 0.15993178·scale·row₂` (`P` rigblock position `+0x54`, `row₂` the third orientation row `+0x48`, `scale` `+0x2c`), weight 1.0, radius `max(0.04, 0.37802768·0.7·scale)`; consecutive nodes are joined by an edge with parameter `0.3`.
+  - Observed — **edges become blobs** (`0x4fcd90`): a segment A→B with radii `rA`, `rB` is filled with blobs; for a constant radius the centres are spaced `0.3·2·r = 0.6·r` apart (`n = ceil(L/(0.6·r))`); for a taper the radii follow a geometric progression with ratio from `(1 − 0.3·m)/(1 + 0.3·m)`, `m = (rA − rB)/L`. Two `pow`/`sqrt` normalisations inside are not recoverable from the decompiler output (x87 arguments); with weight 1.0 they are 1.
+  - Observed — **limbs** (`0x4128f0`, type 3 blocks with flag `1`): two branches. Without the limb model's skin-ring properties (`0x105f54ff`, `0xf061e767`): three nodes at the block origin / midpoint / tip with radii `3.0·f, 2.7·f, 2.0·f` (`f = max(0.01, extent helper 0x413d50(bbox size))`) joined by 0.3-edges; with them: a ring-profile walk using those arrays and `rb+0x74/0x78/0x7c` (muscle values) to place per-ring nodes. If block flag `0x10` is set: a 15-step Hermite-style curve (`0x422470`) from the base to the tip with the radius interpolated between `0.1·rb+0x78` and `0.1·rb+0x7c` (min radius `0.1·0.5·...`). Property `0xfe0926f6` (default 0.5) scales the minimum radius by 0.1.
+  - Observed — the `Skinner/Swarm` string belongs to a **skin-paint script command** (`effect`, `spacing`, `limit`, `cover`, `ordered`), not the mesh generator.
+  - Not done — the threshold value and where it is set; the polygoniser that turns the grid + field into a mesh (and its UVs, smoothing and AO); the ring-profile limb branch; the `0x4fcd90` normalisations; exact radius of the limb nodes (`0x413d50`).
+- Strong inference `[SI]`: surface extraction is grid-based (the grid resolution is the `mSkinResolution*` value `0x4f96c0` receives), producing a mesh the paint system then UV-maps.
+- Discriminating test: build the field from decoded spine nodes (and limbs) for a premade creature, extract an iso-surface, and compare silhouettes against the game's own thumbnail (INV-030 method) — expect a better fit than the tube proxy (median IoU 0.578).
+- Follow-ups: find the threshold setter and the polygoniser (callers of `0x4f8f90`/the function pointer); implement the field + surface-nets preview in the viewer (INV-037).
+
+---
+
+## INV-037: the decoded skin shape fits the game's thumbnails better than the tube proxy
+
+- Status: confirmed as a placement/size test (silhouette level); surface extraction details still open
+- Confidence: observed (paired comparison over 60 creatures); disc-union approximation of the iso-surface
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-23
+- Target: `tools/skin_blobs.py` (INV-036 field/placement: spine exact, limb ring-profile branch, curved-limb branch approximated), `tools/skin_blobs_test.py`
+- Evidence: 60 random premade creatures with thumbnails; same camera grid / 64×64 IoU as INV-030; skin = every Vertebra and skinned-limb blob drawn as a disc of radius `0.827·R` (the single-blob iso radius at threshold 0.01), plus INV-030-style discs for blocks that are _not_ skinned (Standard/extra parts are drawn as models); baseline = INV-030 tube proxy on the same creatures.
+- Findings:
+  - Observed — **median IoU 0.674 (decoded metaball skin) vs 0.606 (tube proxy); the metaball skin is better in 54 of 60 creatures (90 %).** A first run that scored the skin alone (without the model-drawn parts) gave 0.590 vs 0.582 — the thumbnails include the attached parts, so skin-only was an unfair test.
+  - Observed — all 3,479 skin-contributing limb blocks (type 3, flag 1) in the first 400 creatures reference two ring sets in group `40606600` (57 sets, 105 chains; keys in block props `105f54ff` / `f061e767`, always different sets). Each chain holds `n` rings: `105f5303` (vec3, little-endian), `105f5302` (radius profile), `105f5304` (position along the limb, 0…1); the two sets are blended by the block's `muscle` value.
+  - Observed — `creatureData`'s fifth float at rigblock `+0x7c` (read by `0x4128f0` as the tip muscle value, default 1.0 when negative) was being dropped by `creature_data.py`; now kept as `f7c`.
+  - Strong inference `[SI]` — **Vertebra and skinned-limb blocks are not drawn as models in the final creature; only the skin is** (plus Standard parts). My earlier viewer drew those editor-handle models (the tentacle-like shapes) and was wrong to.
+  - Not established — the iso-surface itself (discs only), the curved-limb Hermite tangents (`0x422470`), the `pow`/`sqrt` normalisations in `0x4fcd90`, blob ownership for skinning, the polygoniser's smoothing.
+- Discriminating test: extract the real iso-surface and compare against the thumbnail with a fitted camera and lighting, expecting IoU to rise further.
+- Follow-ups: INV-038 surface extraction + viewer integration; skin paint textures.
+
+---
+
+## INV-038: the decoded skin generator drives the native viewer — creatures now render with a real skin surface
+
+- Status: delivered (placement and kernel from the executable; polygoniser, curved-limb tangents and skin paint not reproduced)
+- Confidence: observed (renders inspected); silhouette fit measured in INV-037
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-23
+- Target: `tools/skin_blobs.py` (blob placement), `tools/export_creatures.py` (scene `SPC3`: parts + walk bake + blobs with owner block), `viewer/Sources/SporeView/SkinSurface.swift` (iso-surface extraction), `viewer/Sources/SporeView/main.swift`
+- Evidence: offscreen renders of premade creatures (`spore_work/viewer/snap/*.png`, local): body + muscular limbs + hands/feet/mouth/spikes; a 400-creature scene exports in 34 s and a creature's skin is extracted in ~0.1 s (grid 0.028 world units, ≤176 cells per axis).
+- Findings:
+  - Observed — the viewer now draws the **skin** as the `f = 0.01` iso-surface of the decoded metaball field (naive surface nets, normals from the field gradient) in the creature's skin colour, plus the **non-skinned parts** (hands, feet, mouths, eyes, spikes, wings…) as models in the secondary skin colour. Vertebra and skinned-limb editor models are no longer drawn (INV-037).
+  - Observed — limbless creatures (e.g. a body with many small parts) render as a smooth body with attached parts; limbed creatures show tapered, muscle-weighted legs and arms whose tips meet their hand/foot parts (the limb tip axis `−row₁ · L` was verified against attached-part positions: 939 of 963 limbs, 97.5 %).
+  - Observed — skin vertices carry their strongest blob's owner block and use that block's walk-bake matrix (rigid, per owner); legs therefore move with the body and the attached feet move relative to them — approximate.
+  - Not done — the game's own polygoniser (smoothing, LOD), exact curved-limb tangents (`0x422470`), skin paint textures / UVs, ambient occlusion, blend-weighted skinning (the game deforms one static skin with bone weights).
+- Follow-ups: skin paint (the brush textures, INV-029) onto the skin; weighted skinning for the walk preview; compare against the running original (INV-035) side by side.
+
+---
+
+## INV-039: E0 — the renderer is Direct3D 9; pixel shaders are generated as HLSL text at run time from fragments (first renderer-mapping result)
+
+- Status: partial — graphics API, shader model range and the pixel-shader generator located; vertex-shader generator, fragment table contents and material → fragment mapping not yet decoded
+- Confidence: observed (strings, xrefs, decompilation) for the findings below; fragment-table layout is `[SI]` where marked
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: GOG EP1 `SporeApp.exe` 3.1.0.29, SHA-256 `dc04aee5a3debc3f1ad4c1a937460e99a29b9bd3bc285008be83615dd5e59a37`: `FUN_011f69d0` (0x11f69d0, 872 bytes, single caller `FUN_011f6d40`), strings 0x14f7860–0x14f7c38, 0x140b4f0–0x140c094, 0x140cac0/0x140cb18
+- Evidence: REA `search_strings` (evidence ids `ev_7ddfbc15…`, `ev_df3760ca…`), `xrefs` of 0x14f78a0 (→ 0x11f6cb1, 0x11f6cc4), `analyze_function` 0x11f6cb1 (dossier saved locally only)
+- Findings:
+  - Observed — **Direct3D 9.** Import names `Direct3DCreate9`, `D3DXCompileShader`, `D3DXGetPixelShaderProfile`, `D3DXGetVertexShaderProfile`; the compile call resolves to `D3DX9_27.DLL::D3DXCompileShader` (0x11e2014). Shader-profile strings `ps_1_1 … ps_3_0` (0x14f78a0–0x14f78d0) and `vs_1_1 … vs_3_0` (0x14f7c18–0x14f7c30); a message "Unable to identity pixel shader version 0x%x - using MaxTextureBlendStages" (0x14f7cc8) shows a fixed-function fallback.
+  - Observed — **shaders are assembled as source text.** `FUN_011f69d0` reads a material descriptor (a 0x11-byte head, then up to 0x20 fragment ids from `+0x11` and a parameter array from `+0x34`), looks each id up in a table at 0x1718b08/0x1718c08, and appends text pieces: `struct PS_IN {`, `struct PS_CURRENT {`, `struct PS_OUT {`, `PS_OUT main( PS_IN In )\n{\nPS_CURRENT Current;\nPS_OUT Out;\n`, fragment bodies, then `return Out;\n}\n`. It picks the best available `ps_*` profile, then calls `D3DXCompileShader`. The matching vertex side exists as strings (`VS_IN`, `VS_OUT`, `VS_OUT main( VS_IN In )`, `VS_CURRENT`) but its generator is not yet located.
+  - Observed — vertex semantics emitted: POSITION0/1, NORMAL0/1, BLENDWEIGHT0/1, TANGENT, BINORMAL, COLOR0/1, TEXCOORDn; samplers `sampler0 … sampler5` and `extern uniform sampler Sampler%d : register(s%d)` (at most six).
+  - Observed — two small fixed shaders (0x140cac0 pass-through pixel shader; 0x140cb18 vertex shader coloured by `frac(frameTime[0])`), debug commands `dumpShaders`, `dumpFragmentShaders`, `dumpDirectShaders`, `dumpShadersForPIX`, and the terrain has its own shader manager (`Terrain/ShaderManager/cTerrainShaderMgr`, referenced at 0xf95d48).
+  - Observed — the patch-5.1 COLLADA exporter's effect template (a Phong material with diffuse, normal and specular samplers; 0x13ed518) is present: a cross-check for what the game considers a creature material.
+  - `[SI]` — the table at 0x1718c08 has 16-byte rows indexed by fragment id: two flag words, a count byte, and two function pointers (one declares inputs/outputs, one writes the body). Not yet read row by row.
+- Consequence for the Metal port: the **faithful** material path should not translate compiled shaders. Decoding the fragment table gives the HLSL pieces; each piece can be rewritten once in Metal Shading Language and composed by the same descriptor, which is also what the enhanced path will reuse.
+- Discriminating test: decode the fragment table, list every fragment id with its emitted text, then run `dumpFragmentShaders`-equivalent output through the generator logic offline for one creature material and compare against the material descriptor read from an RW4 `CompiledState` (INV-016).
+- Follow-ups: (1) read the fragment table and emit every fragment's text (static, from the data section); (2) find the vertex-shader generator and the caller chain from the material/`CompiledState` loader into `FUN_011f6d40`; (3) map the device-creation and render-state setup (`Direct3DCreate9` call site) and the main loop / frame tick; (4) input.
+
+---
+
+## INV-040: native macOS app bundle with a Spore-style planet scene at 4K (viewer renderer rebuilt; first "launches natively" result)
+
+- Status: delivered as a creature showcase, NOT the game — no gameplay, editor, UI, audio or runtime game-file loading
+- Confidence: observed (app launched from Finder via `open`; 3840×2160 offscreen renders inspected; window capture inspected)
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: `viewer/Sources/SporeView/main.swift`, `viewer/make_app.sh` → `viewer/SporeMac.app` (arm64, ad-hoc signed, `NSHighResolutionCapable`, `LSSupportsGameMode`)
+- Evidence: renders `spore_work/viewer/snap/v2a.png`, `v2_20.png`, `v2_120.png`, `v3_0.png` (local); window capture of the running app (local)
+- Findings:
+  - Observed — renderer: sRGB-correct output (`bgra8Unorm_srgb`, linear lighting), 4× MSAA, 4096² directional shadow map with 3×3 PCF, procedural sky (gradient, sun glow, clouds) whose gradient starts at the planet limb, a curved planet (radius 28× creature radius) with procedural grass/dirt, aerial-perspective fog, hemisphere + wrap-diffuse + rim creature lighting, ACES tonemap, ProMotion frame-rate request, F = full screen.
+  - Observed — launching from Finder first triggered a macOS Documents-folder permission prompt; it was not answered by the agent. The app now reads its scene from `~/Library/Application Support/SporeMac/scene.bin` (copied by `make_app.sh`), and launched without a prompt.
+  - Observed — 400 creatures browse with ← →; skin is still the generic surface-nets extraction (faceting visible on thin limbs), skin colours are flat (no paint textures), animation is the INV-034 rigid walk preview.
+  - Not done — the look is Spore-_styled_, not reproduced from the game's own materials (INV-039 follow-ups), no title/menu/UI, no editor, no gameplay, no audio, no runtime resource loading (the scene is still baked by `tools/export_creatures.py`), no MetalFX/EDR, not yet C++20 (still the Swift prototype; E1 not started).
+- Follow-ups: E1 (C++20 core, runtime DBPF/RW4 loading, Metal 4 path), skin paint + polygoniser (E2), the INV-039 fragment-table decode to make the faithful material path evidence-based.
+
+---
+
+## INV-041: game layer on the native app — title screen, playable creature stage with stand-in flora (stand-ins are NOT recovered from the original)
+
+- Status: delivered as a prototype game loop; world content and rules are invented stand-ins, flagged as such
+- Confidence: observed (headless simulation of the play loop; 3840×2160 renders inspected; title screen captured from the running app). A later live play capture and a click-through of the title buttons were not possible: the display was asleep/locked and no UI automation permission is held.
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: `viewer/Sources/SporeView/main.swift` (`Renderer.update`, `buildProps`, `TitleOverlay`), `viewer/make_app.sh`
+- Evidence: `spore_work/viewer/snap/g4.png`, `w2.png` (local); `SporeView --snapshot … --walk 4 --turn` printed `offset=(-9.81,-0.14) heading=-3.13 clock=3.00` for W+D held at camera yaw 0.8 (expected: direction fwd+right = (−1.41, −0.02), heading π)
+- Findings:
+  - Observed — creatures face **−Y** in their own assembled space (two orbit renders of creature `40626200/…`, head toward −Y); the app turns the creature about its centre by `heading + π/2`.
+  - Observed — controls: WASD camera-relative walk, Shift run, ← → camera turn, drag/scroll orbit/zoom, Esc to title, Return to play, F/⌘⌃F full screen, ⌘Q quit; walk cycle speed follows movement speed and settles at the rest pose when idle.
+  - Observed — the ground is world-anchored procedural grass; clouds drift; props are hashed on a grid in world space (3.2 creature-radii cells; culled at 10.5 radii and scaled in from 7.5 so they do not pop).
+  - Not recovered — the flora (bulb flowers, trees, rocks, pods) is **my own stand-in design**; the original's plants, terrain, other creatures, AI, nests, DNA/progression, UI art, audio and music are not implemented. The planet is a sphere of 70 creature-radii, not the game's planet data.
+- Follow-ups: replace stand-ins with decoded systems (ROADMAP E4/E5), skin paint (E2), INV-039 fragment-table decode for faithful materials, AppKit overlay → game UI from `spui` (E6).
+
+---
+
+## INV-042: the game's shaders are data — an HLSL fragment library and a precompiled D3D9 shader cache in resource type `0469a3f7`
+
+- Status: partial — location, grouping and content class established; record format and the descriptor → shader mapping not yet decoded
+- Confidence: observed (corpus scan of all 158,720 resources; sample decompression and inspection)
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: GOG 3.1.0.29 packages `Data/Spore_Graphics.package`, `Data/PatchData.package`, `DataEP1/Spore_EP1_Data.package` (resource type `0469a3f7`); tool `tools/shader_scan.py`
+- Evidence: `spore_work/inv042/shader_scan.json` (local); REA reads of the shader-generator tables (INV-039)
+- Findings:
+  - Observed — 36 resources of type `0469a3f7`: three groups × four instances in each of the three packages. Group `40212000` (≈6.7 KB each, binary records of hashed ids → index), group `40212002` (≈345 KB each, **HLSL source fragments**: named blocks, parameter declarations with type tags, helper functions such as `toClipSpace` and a bone-skinning routine with `SkinBones[indices.x + k]` matrix rows), group `40212004` (≈5 MB each, **precompiled D3D9 shader bytecode**). Instances 0–3 plausibly select shader tiers; unconfirmed.
+  - Observed — bytecode version tokens inside the cache: vs_2_0 15,698 · ps_2_0 2,937 · ps_2_x 1,647 · ps_3_0 460 · vs_3_0 395 hits (a token scan, so counts are of candidate starts, not validated shaders). Elsewhere: `01a527db` carries vs_1_1/ps_1_x (older fixed-function-era shaders, `Spore_EP1_Data` group `021407ee`), `03e421e9` has vs_2_0/ps_2_0.
+  - Observed — the executable's generator (INV-039) only emits the plumbing text (`Current.* = In.*`, `Out.* = Current.*`); the lighting, skinning and material code lives in these resources.
+  - Observed — the fragment library, the cache and its index are the original game's code and stay local; nothing from them is committed or quoted at length here.
+- Consequence for the Metal port: the _faithful_ material path can run the game's own shaders. Two routes: (A) decode the fragment library and port each fragment once to Metal Shading Language, composing with the same descriptor logic; (B) write a D3D9 SM2/SM3 bytecode → MSL translator and look up the precompiled variant by descriptor hash. (B) gives exact original permutations; (A) is easier to read and extend. Recommended: A for the fragments the creature stage uses, B only if the descriptor → fragment mapping proves hard.
+- Not established — the record format of 40212000/2/4; how the descriptor (up to 0x20 fragment ids, INV-039) maps to a library entry or cache entry; what instances 0–3 mean; which fragments the creature materials use.
+- Discriminating test: decode group `40212002` into (name, params, code) records and check that the count and name set match the fragment-id table the generator indexes at runtime (INV-039 table, filled at startup).
+- Follow-ups: decode `40212002`; locate the startup registration of the fragment table (writers of `0x1718b08`/`0x1718c08`, not found by direct xrefs); decode `40212000`.
+
+---
+
+## INV-043: shader resource groups and instance semantics; cache header decoded (E0 renderer mapping)
+
+- Status: partial — group/instance roles and the cache header established; per-shader record bodies, the fragment-record layout and the descriptor → shader lookup remain
+- Confidence: observed (decompilation of the loader/writer functions + header values read from the packages)
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: GOG EP1 `SporeApp.exe` (SHA-256 `dc04aee5…e59a37`): `FUN_0070ef10`/`FUN_0070f010` (fragment library write/read, group id at 0x1535f68), `FUN_0070f140`/`FUN_00711e50` (shader cache write/read, group id at 0x1535f6c), `FUN_00710ac0` (material/render-asset table write, group at 0x1535f60, label `RenderAsset/Materials`), `FUN_007126e0` (selects the instance from two settings 0x1a34e253 / 0xe1408308 and checks the package), `FUN_007130e0`; resource type `0x0469a3f7`; `tools/shader_scan.py`
+- Evidence: REA `search_bytes` for `f7 a3 69 04` (7 code references in 0x70ef10–0x7130e0); `read_bytes` 0x1535f60 = `00 20 21 40 | 01 20 21 40 | 02 20 21 40 | 04 20 21 40` (little-endian group ids 0x40212000, 0x40212001, 0x40212002, 0x40212004); package headers (local files `spore_work/inv042/cache_*.bin`, `frag_2.bin`, not committed)
+- Findings:
+  - Observed — **group roles.** 0x40212000 = shader/material index; 0x40212001 = compiled materials, stored as RW4 (`2f4e681b`) objects labelled `RenderAsset/Materials` (written at run time; no such group is present in the shipped packages); 0x40212002 = HLSL fragment library (version word 1); 0x40212004 = shader cache (version word 6 or 7 accepted). The resource **instance** is a shader-quality tier chosen from game settings (`FUN_007126e0` picks between two setting values, falling back to the first).
+  - Observed — **instances are shader-model tiers.** The cache for instance 0/1 starts its bytecode with vs_2_0/ps_2_0 tokens (`0xfffe0200`/`0xffff0200`), instance 2 with ps token `0xffff0262` (2_x family), instance 3 with vs_3_0/ps_3_0 (`0xfffe0300`/`0xffff0300`).
+  - Observed — **cache header (big-endian):** u32 version = 7; u32 vertex-shader count (0xff in instance 0, 0x103 in instances 1–3); then fields not yet decoded (offsets 0x08–0x14), and the first shader's bytecode at 0x18. Reader `FUN_00711e50`: after the version, it reads a count and, per entry, a u32 key and a body (`FUN_006e5dc0` for vertex programs, `FUN_006fd660` for pixel programs), then a trailing raw byte blob when version > 3.
+  - Observed — the fragment library reader checks a version word of 1 and hands the stream to two further parsers (`FUN_006ff7e0`, `FUN_006fc810`); the first record of instance 2 begins `00000001 00000001 00000000 00000700 00000003` then a length-prefixed code string.
+  - Strong inference `[SI]` — fragment records are `{header words, code string, parameter list [declaration string + 12-byte trailer: u16 u16 u16 u16 u32], name string, …}` (e.g. `toClipSpace` with parameters `float4x4 modelToClip`, `float4x3 modelToWorld`).
+- Discriminating test: write a parser for 0x40212002 from the two loader functions' structure; it must consume each resource exactly with zero bytes left over, in all 12 files.
+- Follow-ups: (1) decompile `FUN_006e5dc0`, `FUN_006fd660`, `FUN_006ff7e0`, `FUN_006fc810`, `FUN_006e6170`, `FUN_006fd020` (the record readers); (2) a D3D9 SM2/SM3 token-stream parser (opcode, length bits, comment tokens, END = 0x0000FFFF) to split the cache into shaders and validate counts; (3) find how a material descriptor maps to a cache key (`FUN_011f69d0` caller `FUN_011f6d40`).
+
+---
+
+## INV-044: the shader fragment library parsed exactly (12/12 files); the original's full material/lighting pipeline is now enumerable
+
+- Status: confirmed for the container format (every byte of all 12 library files consumed); fragment semantics and the descriptor → fragment-list mapping remain open
+- Confidence: observed (decompiled readers `FUN_0070f010`, `FUN_006ff7e0`, `FUN_006fc810` → `tools/shader_frags.py`; discriminating test passed)
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: GOG EP1 `SporeApp.exe` (SHA-256 `dc04aee5…e59a37`) loaders above; resources type `0469a3f7` group `40212002`, instances 0–3 in `Spore_Graphics`, `PatchData`, `Spore_EP1_Data` packages
+- Evidence: `python3 -I tools/shader_frags.py` over all 12 files: `version 1, vertex 255, pixel 256, consumed N/N EXACT` for each (sizes 337,465–351,276 bytes); the counts 255/256 equal the sizes of the executable's static fragment arrays (`DAT_0162476c` stride 0x44 up to 0x1628b28; `DAT_016198d8` stride 0x64 up to 0x161fcd8)
+- Findings:
+  - Observed — format (big-endian): `u32 version(=1)`, 255 vertex fragments, 256 pixel fragments; each fragment is header words + flags + code string + a second text string + parameter list (declaration string + 4×u16 + u32) + (flags&2) a name; pixel fragments additionally carry a resource key (group, instance) and seven words. Layout recorded in the tool's docstring.
+  - Observed — SM3.0-tier library (instance 3): 171 of 255 vertex and 153 of 256 pixel fragments are named. They cover the whole game, not only creatures: skinning (`skinPosition*`, `skinPositionNormalTangent*`, `skinScaleOn/Off`), spherical-harmonic lighting (`shLightingDiffSpec9`, `setupSHBakedCreatures`, `shLightingSpec_BakedCreatures`, `…NormalMap`, `shLightingGlossy16/25`), creature skin-paint **splatter** passes (`onlyDiffuseSplatter`, `BakeInfoSplatter`, `NMapSplatter`, `ZPRSplatter`, `ambOccSplatter`, `detailParts*Splatter`, `applyBakedPaint`, `setupEditorPaint*`), shadow maps (`renderShadowMap`, `applyShadowMap*`), UV projection tweaks (`uvTweak_projectXY/…/boxMap/cylindrical_*`), terrain/water/atmosphere (`Terrain*`, `CalcInScatter`, `GetPlanetarySphereIntersectionDistance`), flora and scenery (`grassVanillaVS/PS`, `cloudVanilla*`, `rocksVanilla*`, `smokeVanilla*`), planets (`planetImpostor*`), particle/effect lighting (`effect*VF`, `particleLightingSH`), hair, cell editors, GhostCreature.
+  - Observed — the same names appear in a lower-quality form in instances 0–2 (smaller libraries), consistent with shader-model tiers (INV-043).
+  - Consequence — the faithful render path is a port of named fragments, not guesswork: the creature path (skin → `setupSHBakedCreatures` → `shLightingSpec_BakedCreatures` + `applyBakedPaint`) and the world (terrain, grass, clouds, rocks, atmosphere) are all described by shipped code. The library is the original's code and stays local.
+- Not established — how a material descriptor selects and orders fragments (`FUN_011f69d0`'s table, filled at start-up); fragment-id numbering; what the header words `a`/`b`/`c`/`d`/`e` mean; the cache (group 40212004) record bodies; which fragments the creature stage actually uses at runtime.
+- Follow-ups: read the creature-path fragments and write an independent Metal Shading Language implementation (spherical-harmonic lighting, skinning, baked paint); find the start-up registration that gives each fragment its id; parse the cache.
+
+---
+
+## INV-045: native creature lighting reimplemented in the structure of the original's SH + cel model (independent implementation)
+
+- Status: delivered for creatures and props; terrain/sky/grass still use the earlier hand-built model; the environment SH is my own fit, not the game's per-scene data
+- Confidence: observed (renders inspected); structure derived from INV-044's fragment text (read locally), numbers (band weights 2/3 and 1/4, default gloss 0.35 × 0.4, cel threshold 0.25 ± 0.075, cel strength 0.3, shadow adjust 0.1/0.9) taken from it
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: `viewer/Sources/SporeView/main.swift` (`fitEnvironmentSH`, `shDiffuse`, `shRadiance`, `lightSurface`)
+- Findings:
+  - Observed — in the original creature path the colour is `albedo × lerp(SHdiffuse(n), SHspecular(reflect(view, n)), gloss)` plus a sun highlight `pow(n·r…)`, then multiplied by `(1−cel) + cel·smoothstep(0.175, 0.325, n·v)`. The viewer now computes exactly that structure: 9 coefficients in the basis `1, y, z, x, xy, yz, 3z²−1, zx, x²−y²`, fitted by least squares (4,096 samples) to the viewer's own sky/ground radiance, plus a shadowed sun term.
+  - Observed — result: creatures read as softly lit, saturated, with darkened silhouettes; the earlier ad-hoc rim/glow terms were removed.
+  - Not done — the game's actual per-scene SH data and light colours; baked paint blend (`applyBakedPaint`) and the splatter passes; skinning via bone-matrix rows; the terrain, grass, cloud and atmosphere fragments (`Terrain*`, `grassVanilla*`, `CalcInScatter`); no comparison against original frames exists.
+- Follow-ups: decode the registration table so fragments can be selected by id; port the skin-paint splatter fragments; port terrain/atmosphere fragments to replace the hand-built ground and sky.
+
+---
+
+## INV-046: live verification of the native app (title → play) and skin-detail stand-in
+
+- Status: confirmed for launch, play mode and scrolling world; look-and-feel parity with the original remains unverified
+- Confidence: observed (window captures of the running `SporeMac.app` launched with `open`, `SPORE_AUTOPLAY=1` test hook; two frames 4 s apart showed the world scrolling and the HUD; a later capture showed creature 121/400 walking)
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: `viewer/SporeMac.app` (arm64, ad-hoc signed), `viewer/Sources/SporeView/main.swift`
+- Findings:
+  - Observed — the app launches from Finder-style `open`, reads its data from `~/Library/Application Support/SporeMac/scene.bin` without a permission prompt, shows the title screen, and in play mode moves the world under a creature that turns to face its heading; walking, camera orbit and HUD work (earlier headless run of the same loop gave consistent numbers, INV-041).
+  - Observed — default creature is now index 120 (eight-limbed premade) because index 0 is a featureless egg; fog distance widened to 22 radii.
+  - Stand-in — skin mottling (secondary colour, world-space noise) and belly lightening are my own approximation of the game's skin paint, to be replaced by the ported splatter/baked-paint fragments (INV-044).
+  - Not verified — any side-by-side comparison with original frames; 4K on a native 4K panel (renders were produced offscreen at 3840×2160; the live window ran on this Mac's 3456×2234 display).
+
+---
+
+## INV-047: native renders vs the game's own thumbnails (first visual comparison)
+
+- Status: qualitative only (visual inspection of one sheet, no IoU or other metric in this entry); not a claim of nostalgic or 4K parity. The sheet was inspected as last built (09:33); a re-run was attempted afterwards and failed (see Not established), so it may predate the newest viewer build.
+- Confidence: observed (one contact sheet, four creatures); no numbers measured
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: `tools/compare_thumbs.py` → `spore_work/inv047/sheet.png`; left column = the original engine's own 128×128 creature thumbnails (resource type `2f7d0004`, same group/instance as the creature); right column = `SporeView --snapshot`, portrait mode, 1024 px camera, downsampled to 256 px per cell; scene indices 120, 5, 40, 77
+- Evidence: the sheet itself. The thumbnails are the original engine's render (plain light-grey backdrop, soft shadow, neutral light). The native side uses a neutral-lit portrait camera but still draws the sky/grass scene and props, so this compares silhouette and colour, not lighting parity.
+- Findings (per creature, visual only):
+  - 120 (eight-limbed premade): silhouette partly matches — hunched posture, four leg pairs, club-tipped tail and horned head are all present; the original is seen from a slightly higher, three-quarter angle. Colour does not match: the original body is maroon with yellow bands, the render is olive-yellow with faint mottling. Skin-detail gap: the bands, the eyes and the mouth detail are absent. Right: proportions and limb count.
+  - 5 (blob with two eyes): silhouette partly — same orange egg-like mass, but the thumbnail views it face-on with both large eyes at the front, the render is side-on with two small eyes on top. Body orange matches closely. Gap: the thumbnail has detailed orange irises with highlights and pale mottling; the render's eyes are flat dark red spheres.
+  - 40 (teal body, claw, eyestalks): silhouette no — the thumbnail is a top-down view showing a claw, two eyestalks, two thin legs and a tail; the render is side-on and shows a rounded body with flat red stubs and a long tail. Body teal matches well. Gap: eye detail, the claw's two-tone colouring and the pale limb tips are missing.
+  - 77 (upright, wings): silhouette mostly yes — upright pose, hunched arms and the leaf-like wing/limb appendages match. Colour partly: purple torso agrees, but the original has pink and orange banding and a pink head, the render is plain purple with a brown head and brown wings. Gap: banding, eyes and mouth. Right: pose and the layout of appendages.
+  - Overall: shape and base hue are right for three of four; the largest gaps are skin paint (banding, mottling, eyes, mouth) and, for 5 and 40, the thumbnail's camera angle differs from the portrait camera, so silhouette is not comparable there.
+- Not established — any metric (IoU, colour distance); camera/framing alignment with the original thumbnail camera; whether the sheet reflects the latest viewer build: `SporeView` (09:35) and `scene.bin` (09:38) are newer than the sheet, and re-running `compare_thumbs.py` failed in `scene_keys()` (struct unpack read an absurd length), which suggests the scene.bin record layout changed and the tool's parser is out of date.
+- Follow-ups: update `scene_keys()` to the current scene.bin layout and re-run; pick a thumbnail-matching camera per creature; port the skin-paint fragments (INV-044) and re-compare with a plain backdrop; add an IoU on a silhouette mask once framing is aligned.
+
+---
+
+## INV-047 (correction): the comparison re-run on the current build
+
+- Status: qualitative, same scope as INV-047 above. The earlier observations came from a sheet made before the newest viewer build; this supersedes them for the current build.
+- Confidence: observed (visual comparison of `spore_work/inv047/sheet.png`, regenerated 2026-10-24 after fixing `tools/compare_thumbs.py` to read the SPC4 scene layout)
+- Target: thumbnails for creature indices 120, 5, 40, 77 (original engine renders) against the native viewer's portrait renders (neutral-lit camera, grass background)
+- Findings:
+  - Creature 120: pose and limb count close; colour not (native is olive-yellow with faint mottling, original is maroon with yellow bands); skin detail missing.
+  - Creature 5: orange colour close; the thumbnail is face-on with large front eyes, the render is side-on with small flat eyes; the camera angles differ, so silhouette is not comparable.
+  - Creature 40: teal colour close; the thumbnail is top-down (claw, eyestalks, thin legs), the render is side-on, so silhouette is not comparable.
+  - Creature 77: upright pose and appendage layout close; colour partly (purple torso agrees, but the original's head and banding are pink and orange, the render's head and wings are brown).
+- Not established: any numeric similarity; lighting parity; whether the native camera can be matched to the thumbnail camera.
+- Discriminating test: render each creature from the thumbnail's camera and compute IoU and colour distance against the original thumbnail (same method as INV-030/037).
+
+---
+
+## INV-043 (correction) and INV-050: the shader cache parses exactly on all four tiers
+
+- Status: confirmed for container framing (4/4 files consumed to the last byte; every embedded bytecode blob passes a D3D9 token walk). Key semantics, record field meanings and slot values remain open.
+- Confidence: observed (exact consumption and token-walk pass; framing derived from the decompiled readers)
+- Target: `spore_work/inv042/cache_0..3.bin` (group 40212004); parser `tools/shader_cache.py`; output `spore_work/inv050/`
+- Correction to INV-043: bytecode does not begin at offset 0x18. Offset 0x08 is the first entry's key, 0x0c–0x14 hold that entry's base fields (a, b, c; a and b are 0 there), and the vertex/pixel version tokens follow at 0x18 and 0x1c.
+- Findings:
+  - Layout: u32 version (7), u32 vertex-entry count, vertex entries, u32 pixel-entry count (86), pixel entries, tail section A, tail section B, trailer (length-prefixed ASCII tag).
+  - Vertex entries hold a vertex-shader blob and a pixel-shader blob per slot; pixel entries hold only descriptor records and no bytecode.
+  - Counts per tier (vertex / pixel / bytecode blobs): tier 0 255 / 86 / 1695; tiers 1–2 259 / 86 / 1658 and 1831; tier 3 259 / 86 / 1847. All parse exact with zero leftover.
+  - Versions: tiers 0–1 vs_2_0 + ps_2_0; tier 2 pixel token ps_2_x; tier 3 SM3.
+- Not established: meaning of keys (class-tag top nibbles seen; vertex keys repeat 30–33 times per tier, pixel keys are unique); the 32 raw bytes at the start of each tail record; field meanings of the 12-byte and 25-byte records; slot values 0, 0x10, 0x11; why vertex entries carry shader pairs and pixel entries do not.
+- Follow-ups: match vertex-entry keys to material descriptors; decode the tail records; compare slot values with the fragment-id map from the id-mapping report.
+
+---
+
+## INV-039 (correction) and INV-049: the live pixel-fragment generator
+
+- Status: partly confirmed. Pixel fragment ids are direct indices into the 256-entry pixel array loaded from the library. Vertex id mapping is not checked.
+- Confidence: observed for the pixel array's stride and index; inferred for dead-code status.
+- Correction to INV-039: the generator I first identified, `FUN_011f69d0`, appears to be dead code. Its tables at `0x1718b08` and `0x1718c08` are all zero in the shipped image, nothing writes them, and its only caller chain (`FUN_011f6d40` ← `FUN_011f6eb0`) has no resolved callers. The live generator is `FUN_006fb3a0` (called by `FUN_006fb650`). It reads the in-memory pixel array (stride 100, entry = `0x16198c0 + id*100`), takes up to 32 id bytes terminated by 0, and `FUN_006fb240` emits the sampler and constant declarations for each fragment. The array is filled at load time by `FUN_006fc810`.
+- Evidence: `spore_work/inv049/id_map.json` (154 entries: ids 1–153 named, id 0 is the terminator); `frag_3.bin` parses exactly (351,276 of 351,276 bytes).
+- Not established: the vertex id mapping (probably an index into the 255-entry vertex array, unchecked); which byte of the live descriptor holds the id list (the `+0x11` offset came from the dead variant); whether the array is reordered after load (no sign found).
+- Consequence: the ids for the creature path can now be read from the live array, and the fragment names in `frag_3.bin` are the right lookup. Earlier statements that tied creature materials to `FUN_011f69d0` should be disregarded.
+
+---
+
+## INV-051: where the creature paint textures come from (location confirmed; use in shaders not yet)
+
+- Status: partial. The source of the per-block paint textures is located; how the paint pass uses them is not yet implemented.
+- Confidence: observed (resolution through the creature's block property table and the package index)
+- Claimed by: Angus Gastle + Claude Code session — 2026-10-24
+- Target: rigblock property ids `02424655`, `02424656`, `02424657` (the per-block texture references, INV-021/029), and `00F9EFC0` (a model reference, not a texture)
+- Evidence: over the first 200 creatures, the three texture ids resolve in 2,143, 2,143 and 2,138 blocks (5 unresolved). In a sample of 575 resolved `02424655` references, every target is an RW4 resource of kind `0x4` (texture). The `00F9EFC0` references resolve to kind `0x10` (model) resources.
+- Findings:
+  - Observed — the paint textures are per-block texture resources referenced from the block's property table. They are not the creature's mesh textures.
+  - Corrected: an earlier check picked a model reference by mistake; the texture references are consistent with INV-029.
+  - Not established — how the paint pass combines the three per-block textures, the UV layout that maps them onto the skin, and the paint colour constants. The paint spec (`spore_work/inv051/paint_spec.md`) still lists these as unknown.
+- Follow-ups: decode one `02424655` texture into an image and check it against the thumbnail's paint pattern; find the UV generator (host code, not shaders).
+
+---
+
+## INV-051 (follow-up): one creature paint texture decoded
+
+- Status: partial. A texture decodes; its role in the skin is not yet established.
+- Confidence: observed (decode of one DXT5 texture); interpretation inferred
+- Target: texture referenced by creature `40626200/0654E2CA` (rigblock property `02424655`), resource `406A2100/18CCECBA`, 128×128 DXT5, 8 mip levels
+- Evidence: `spore_work/inv051/paint_tex_120_a.png` (local decode via `tools/rw4_raster.py`)
+- Findings:
+  - Observed — the texture is a 128×128 sheet with several coloured regions and a central light oval. It does not look like a single brush stroke, so it is probably a UV-mapped atlas that the paint pass samples per part.
+  - Observed — the same texture id `406A2100` is shared by seven creature blocks, each with a different instance id. The instances differ, so the blocks may reference one shared sheet with different UVs.
+  - Not established — which UV region each block samples, and how the diffuse and alpha channels combine as the paint spec describes.
+- Follow-ups: compare the sheet's regions with a thumbnail's colour bands; find the UV generator in the creature assembly code.
+
+---
+
+## INV-051 (UV finding): creature part meshes carry no texture coordinates
+
+- Status: observed for the sampled part; the paint UV rule is implied by the shader fragments, not yet reproduced.
+- Confidence: observed (vertex element usages read from the RW4 vertex description of a creature part)
+- Target: the part mesh referenced by the first block of creature `40626200/0654E2CA` through property `00F9EFC0`
+- Evidence: vertex description usages `[(0, float3 position), (3, normal)]`; no usage 5 (TEXCOORD) element
+- Findings:
+  - Observed — the sampled part has position and normal only. The part's own UVs are not stored in the mesh.
+  - Inferred — the paint UVs are generated when painting, by the planar, box, cylindrical and disc projections that the `uvTweak_*` fragments implement (INV-044, `spore_work/inv051/paint_spec.md`). This fits the atlas decoded earlier (INV-051 follow-up), which holds several regions rather than one per-part layout.
+  - Not established — the projection axis and scale per block; which projection each block uses; and how the atlas region offsets are chosen.
+- Follow-ups: read the `uvTweak_*` fragment text to get the exact projection maths; find the per-block projection selector in the creature property table.
+
+---
+
+## INV-052: the paint projection rules (uvTweak family) — formulas stated in neutral form
+
+- Status: observed for the seven projection fragments. Which one each block uses, and the per-block `uvTweak` constants, are not yet established.
+- Confidence: observed (fragment text, read locally from `spore_work/inv042/frag_3.bin`; restated here as formulas, not quoted)
+- Inputs: vertex position p, normal n, a per-block constant vector `t = (sx, sy, ox, oy)`, and the model-to-world scale `s = length of the first column of the model-to-world matrix`
+- Rules:
+  - Planar XY: `uv = (p.xy · (sx, sy) + (ox, oy))`, v flipped (`v = 1 − v`), then scaled by `s`.
+  - Planar XZ and YZ: the same, using `(p.xz)` or `(p.yz)`.
+  - Box map: a three-way mask from the normal's dominant axis chooses which pair of coordinates feeds `u` and `v`, with the sign of the normal flipping the sign of the chosen axis; `u` uses a single coordinate scaled by `sx`, `v` a single coordinate scaled by `sy`; then scaled by `s`.
+  - Cylindrical Z, X and Y: `u = acos(c.x / |c|) · sx · 4/π` where `c` is the position in the projection plane minus the centre `(ox, oy)`; `v = (position along the cylinder axis) · sy`, flipped; then scaled by `s`.
+  - Disc: `u` as in the cylindrical rule; `v = |c| · sy`, flipped; then scaled by `s`.
+- Consequence: the part mesh has no UV set (INV-051 finding), so the paint UVs are these functions of position and normal. Only `t` and the projection choice per block remain to be found.
+- Follow-ups: find the per-block selector and `t` values in the creature property table; check the result against the decoded atlas (`spore_work/inv051/paint_tex_120_a.png`).
+
+---
+
+## INV-053: search for the per-part paint projection constants — negative result so far
+
+- Status: open. The projection choice and its constants are not found.
+- Confidence: observed (name-table search)
+- Target: the hash-name table `spore_work/inv014-names.json` (499 names)
+- Findings:
+  - Observed — the table names only four property ids that relate to skin or paint (`skinpaintBumpHeight`, `skinpaintPartBumpScale`, `PreloadTextures`, `physicsPropSkinned`). None names a projection axis, a `uvTweak` value, or a projection type.
+  - Inferred — the projection constants sit under property ids that the name table does not yet resolve. Finding them needs either a larger name source or a comparison of values across creatures.
+- Discriminating test: for creatures with the same texture but different paint, find the property ids whose values change and fit them to the `uvTweak` form (scale, offset, axis choice).
+
+---
+
+## INV-053 (follow-up): survey of unnamed block properties — no candidate yet
+
+- Status: open. No property has been identified as the per-part projection constant.
+- Confidence: observed (survey of 1,118 creature blocks, 40 creatures)
+- Findings:
+  - Observed — the most common unnamed properties are `00B2CCCB` and `00F9EFBB` (raw keys, present in every block), `00F9EFC0` (a model key, 803 blocks), and several scalar and array values (`8F6FC401`, `9069C7C8`, `F023ED73`, `F023ED79`, `02166464`, `51FA9DFA`).
+  - Observed — the array `8F6FC401` is 528 bytes in every block sampled, which suggests a shared table rather than a per-part setting.
+  - Not established — which scalar or array holds the per-part projection axis, scale and offset.
+- Next: compare values across creatures that share a paint texture but show different paint, and check each candidate's effect in the renders.
+
+---
+
+## INV-054: spine start — the executable's entry chain (partial)
+
+- Status: partial. Entry point and C runtime start-up located; the program's main function and main loop are not yet identified.
+- Confidence: observed (PE header read; REA callee relations)
+- Target: GOG EP1 `SporeApp.exe` (SHA-256 `dc04aee5…e59a37`), image base `0x400000`, entry RVA `0x0DE11E1` mapped to VA `0x11E11E1`. Note: the header read gives the entry VA as `0x11E11E1`, inside `.text`.
+- Evidence: `read_bytes` at `0x400000` (PE headers); `procedure_callees` for `0x11E11E1`, `0x11E0F21`, `0xF489E0`
+- Findings:
+  - Observed — the entry at `0x11E11E1` calls `0x11E0F21`, which Ghidra names `___tmainCRTStartup` (the standard MSVC C runtime start-up). That routine calls `0xF489E0` and several internal routines; one terminal path calls `MSVCR90.DLL::exit`.
+  - Observed — `0xF489E0` calls three functions (`0x5D74E0`, `0x92C420`, `0xF48810`). It has not been confirmed as the program's main function (it has no direct window or message-loop calls in its callee list).
+  - Not established — which routine is the game's `WinMain`; where the message loop and frame tick live; the stage dispatcher.
+- Next: decompile `0xF489E0`'s callees and search for window-creation and message-loop imports to locate the main loop.
+
+---
+
+## INV-055: first paint-pass attempt on the native skin (approximation; off by default)
+
+- Status: experimental. The default look is unchanged. The paint pass runs only when `SPORE_PAINT` is set.
+- Confidence: observed (comparison sheet `spore_work/inv047/sheet.png`); the projection and colour constants are approximations, not decoded values.
+- Method (approximate): the decoded atlas (INV-051 follow-up) is bound as a texture; the skin samples it with a box projection of the skin position; the two-colour blend from the paint spec uses the creature's two skin colours in place of the paint constants.
+- Result, with the paint pass on:
+  - Creature 120: banding pattern appears, closer to the original's banding; the base colour is still wrong.
+  - Creature 5: colour regressed to red-brown (original is orange).
+  - Creature 40: a rectangular artefact from the projection seam.
+- Cause of the regressions: the atlas is creature-specific, but I used creature 120's atlas for every creature, and the projection choice is a guess.
+- Decision: keep the paint pass behind the flag. Do not make it default until each creature's own atlas is used and the projection per part is decoded (INV-053 still open).
+
+---
+
+## INV-056: per-creature paint atlases tried on the native skin (off by default; not an improvement)
+
+- Status: negative result. Each creature's own atlas is now exported and loaded (`spore_work/viewer/paint/<index>.png`, 400 files), and the paint pass with per-creature atlases is still worse than the default for colour.
+- Confidence: observed (comparison sheet `spore_work/inv047/sheet.png` with `SPORE_PAINT=1`)
+- Findings:
+  - Creature 5 (orange in the original): the native skin turns red with a tan band.
+  - Creature 40 (teal): the native skin turns red-brown; the teal is lost.
+  - Creature 77 (purple torso): the native skin turns brown; the purple is lost.
+  - Creature 120: unchanged from the single-atlas attempt; banding visible, base colour wrong.
+- Interpretation: the atlas rgb is dominated by red-brown region colours, not a plain base-colour map. Under the paint spec's first lerp, that colour overrides the creature's skin colours. The atlas is probably a per-region sheet whose colours are not the skin colour (consistent with INV-051 follow-up), so the spec's assumption that diffuse rgb is the base does not hold for these textures.
+- Decision: keep `SPORE_PAINT` opt-in. Do not use this atlas as the base colour. Next: decode what the atlas regions encode (mask or region id), which is still unresolved.
+
+---
+
+## INV-057: body colour from the scene's first skin colour, with the atlas as detail; now the default
+
+- Status: observed improvement on the four comparison creatures; not validated beyond them.
+- Confidence: observed (comparison sheet `spore_work/inv047/sheet.png`, default build)
+- Findings:
+  - The three skin colours per creature are: `c0` the body colour (creature 5: orange, matching the original); `c1` and `c2` are accent colours that are the same default red for most creatures, so they are not paint.
+  - Atlases for creatures 0 and 5 are mostly near-white with full alpha, so the body colour should come from `c0`, with the atlas as modulation.
+  - The earlier attempt put `c1` where the atlas was opaque, which turned creature 5 red (INV-056). The corrected mapping uses `c0 * mix(1, atlas.rgb, 0.5)`.
+  - Result: creature 5 orange, creature 40 teal, creature 77 purple, creature 120 maroon. Remaining differences: creature 120's yellow banding and the eyes; creature 77's pink head.
+- Limits: four creatures only. The accent mask (`c1`/`c2`) and the banding's source are not decoded.
+- Default: on. `SPORE_NO_PAINT=1` restores the earlier stand-in skin.
